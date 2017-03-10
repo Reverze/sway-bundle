@@ -1,0 +1,21 @@
+{
+    "name": "rev/sway-bundle",
+    "type": "symfony-bundle",
+    "description": "Swayengine Wrapper for symfony",
+    "authors": {
+        "name": "Reverze",
+        "email": "hawkmedia24@gmail.com"
+    },
+    "minimum-stability": "dev",
+    "require": {},
+    "autoload": {
+        "psr-4": {
+            "SwayBundle\\": "src/"
+        }
+    },
+    "extra": {
+        "branch-alias": {
+            "dev-master": "1.01-dev"
+        }
+    }
+}
