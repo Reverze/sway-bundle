@@ -7,7 +7,9 @@
         "email": "hawkmedia24@gmail.com"
     }],
     "minimum-stability": "dev",
-    "require": {},
+    "require": {
+        "rev/swayemu-user": "dev-dev"
+    },
     "autoload": {
         "psr-4": {
             "SwayBundle\\": "src/"
