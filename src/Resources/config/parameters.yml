@@ -1,0 +1,4 @@
+---
+parameters:
+    email.default.broadcaster: "account@swayware.eu"
+    
