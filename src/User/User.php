@@ -2,56 +2,38 @@
 
 namespace SwayBundle\User;
 
+use SwayBundle\Core\Kernel;
 use SwayBundle\User\Exception;
+use XA\PlatformClient\Controller\User\XAUser;
 
 class User
 {
+
     /**
-     * SWUse's object (sway runtime)
-     * @var \SWUser
+     * @var \XA\PlatformClient\Controller\User\XAUser
      */
     private $userObject = null;
-    
-    private $releaseCookiesOnSignin = false;
-    
+
     /**
-     * Wrapper for SWUser class. Its working on 'SW_USER' global variables
-     * @throws \SWAuthBundle\User\Exception\InitializeException
+     * @var \SwayBundle\Core\Kernel
      */
-    public function __construct(bool $releaseCookiesOnSignin = false, \SWUser $externalUserObject = null)
-    {
-        $this->releaseCookiesOnSignin = (bool) $releaseCookiesOnSignin;
-        
-        /**
-         * If external user's object is defined
-         */
-        if (!empty($externalUserObject)){
-            $this->userObject = $externalUserObject;
-        }
-        
-        if (class_exists("SWUser") && empty($this->userObject)){
-            $this->initializeUserObject();
-        }
-        else if (!class_exists("SWUser")){
-            throw new Exception\InitializeException();
-        }     
-    }
+    private $kernel = null;
     
+
+    public function __construct(Kernel $kernel)
+    {
+        $this->kernel = $kernel;
+
+        $this->initializeUserObject();
+    }
+
+
     /**
-     * Initialize from global variable SW_USER derived by swayengine
-     * @global \SWUser $SW_USER
-     * @throws \SWAuthBundle\User\Exception\InstanceException
+     * Initializes user object
      */
     private function initializeUserObject()
     {
-        global $SW_USER;
-        
-        if ($SW_USER instanceof \SWUser){
-            $this->userObject = $SW_USER;
-        }
-        else{
-            throw new Exception\InstanceException();
-        }
+        $this->userObject = $this->kernel->getPlatformHandler()->getUser();
     }
     
     /**
@@ -60,7 +42,7 @@ class User
      */
     public function isOnline()
     {
-        return (bool) $this->userObject->IsLogged();
+        return (bool) $this->userObject->isOnline();
     }
     
     /**
@@ -70,7 +52,7 @@ class User
      */
     public function signoff()
     {
-        return (bool) $this->userObject->Logout();
+        return (bool) $this->userObject->logout(true);
     }
     
     /**
@@ -79,7 +61,7 @@ class User
      */
     public function getUserID()
     {
-        return (int) $this->userObject->current_id;
+        return (int) $this->userObject->getUserId();
     }
     
     /**
@@ -88,7 +70,7 @@ class User
      */
     public function getUserName()
     {
-        return (string) $this->userObject->current_nick;
+        return (string) $this->userObject->getUserName();
     }
     
     /**
@@ -97,45 +79,28 @@ class User
      */
     public function getEmailAddress()
     {
-        return (string) $this->userObject->current_email;
+        return (string) $this->userObject->getEmail();
     }
-    
-    /**
-     * Gets hashed form of user's password
-     * @return string
-     */
-    public function getPasswordHash()
-    {
-        return (string) $this->userObject->current_password;
-    }
-    
-    /**
-     * Gets password's salt
-     * @return string
-     */
-    public function getPasswordSalt()
-    {
-        return (string) $this->userObject->current_salt;
-    }
-    
+
+
     /**
      * Gets primary user's group' ID
-     * @return integer
+     * @return string
      */
     public function getGroupID()
     {
-        return (int) $this->userObject->current_user_group;
+        return  $this->userObject->getUserGroupId();
     }
-    
+
     /**
      * Gets assigned flag to user's account (user and group)
      * @return array
      */
     public function getAssignedFlags()
     {
-        return (array) $this->userObject->current_flags;   
+        return array("z");
     }
-    
+
     /**
      * Gets register time
      * @param string $format
@@ -144,10 +109,10 @@ class User
     public function getRegistertime(string $format = null)
     {
         if (!empty($format)){
-            return (string) date($format, $this->userObject->register_time);
+            return (string) date($format, $this->userObject->getRegisterTime());
         }
         else{
-            return (int) $this->userObject->register_time;
+            return (int) $this->userObject->getRegisterTime();
         }
     }
     
@@ -157,7 +122,7 @@ class User
      */
     public function getRegisterIpAddress()
     {
-        return (string) $this->userObject->register_ip_addr;
+        return (string) $this->userObject->getRegisterIpAddress();
     }
     
     /**
@@ -167,7 +132,7 @@ class User
      */
     public function getAvatarUri()
     {
-        return (string) $this->userObject->avatarUri;
+        return (string) $this->userObject->getAvatarUrl();
     }
     
     /**
@@ -176,82 +141,86 @@ class User
      */
     public function isConfirmed()
     {
-        return (bool) $this->userObject->confirmed;
+        return (bool) $this->userObject->isAccountConfirmed();
     }
-    
+
+
     /**
-     * Checks if multi-session is enabled for user
-     * @return boolean
+     * Creates a new user account
+     * @param string $nickname
+     * @param string $emailaddress
+     * @param string $rawpassword
+     * @return bool
+     * @throws Exception\ConfirmCodeException
+     * @throws Exception\ConfirmMailException
+     * @throws Exception\CreateException
+     * @throws Exception\EmailReservedException
+     * @throws Exception\EmptyUserNameException
+     * @throws Exception\EmptyUserPasswordException
+     * @throws Exception\InvalidEmailAddressException
+     * @throws Exception\NameReservedException
      */
-    public function isMultiSessionEnabled()
+    public function signup(string $nickname, string $emailaddress, string $rawpassword)
     {
-        return (bool) $this->userObject->isMultiSessionEnabled();
-    }
-    
-    /**
-     * Create a new user account
-     * @param string $nickname User's nickname
-     * @param string $emailaddress Email address which will be assigned into account
-     * @param type $rawpassword Raw user's password
-     * @throws \SWAuthBundle\User\Exception\NameReservedException
-     * @throws \SWAuthBundle\User\Exception\EmailReservedException
-     * @throws \SWAuthBundle\User\Exception\ClientAuthenticationException
-     * @throws \SWAuthBundle\User\Exception\PasswordHashException
-     * @throws \SWAuthBundle\User\Exception\CreateException
-     */
-    public function signup(string $nickname, string $emailaddress, $rawpassword)
-    {
-        $signupStatus = $this->userObject->Register($nickname, $rawpassword, $emailaddress);
+        $signupStatus = $this->userObject->register($nickname, $emailaddress, $rawpassword);
         
         switch ($signupStatus){
-            case 2:
+            case XAUser::EMPTY_USERNAME:
+                throw new Exception\EmptyUserNameException();
+                break;
+            case XAUser::EMPTY_USERPASSWORD:
+                throw new Exception\EmptyUserPasswordException();
+                break;
+            case XAUser::INVALID_EMAIL_ADDRESS:
+                throw new Exception\InvalidEmailAddressException();
+                break;
+            case XAUser::RESERVED_USER_NAME:
                 throw new Exception\NameReservedException($nickname);
                 break;
-            case 3:
+            case XAUser::RESERVED_EMAIL_ADDRESS:
                 throw new Exception\EmailReservedException($emailaddress);
                 break;
-            case 4:
-                throw new Exception\ClientAuthenticationException();
+            case XAUser::PREPARE_CONFIRMATION_FAILED:
+                throw new Exception\ConfirmCodeException();
                 break;
-            case 5:
-                throw new Exception\PasswordHashException();
+            case XAUser::MAIL_SEND_FAILED:
+                throw new Exception\ConfirmMailException();
                 break;
             case true:
+                return true;
                 break;
             default:
                 throw new Exception\CreateException();
                 break;      
         }   
     }
-    
+
     /**
-     * Sign in into user's account
+     * Signin to user account
      * @param string $useridentifier
-     * @param \SwayBundle\User\strign $rawpassword
+     * @param string $rawpassword
+     * @return bool
      * @throws Exception\ExistsException
      * @throws Exception\InvalidPasswordException
      * @throws Exception\SigninException
      */
     public function signin(string $useridentifier, string $rawpassword)
     {
-        $signinStatus = $this->userObject->Login($useridentifier, $rawpassword, $this->releaseCookiesOnSignin);
+        $signinStatus = $this->userObject->signin($useridentifier, $rawpassword);
         
-        if ($signinStatus === true){
+        if ($signinStatus === XAUser::OK){
             return true;
         }
         
-        else if ($signinStatus === 2 || $signinStatus === 6 || $signinStatus === 7){
+        else if ($signinStatus === XAUser::USER_NOT_FOUND){
             throw new Exception\ExistsException($useridentifier);
         }
-        else if ($signinStatus === 3){
+        else if ($signinStatus === XAUser::INVALID_PASSWORD){
             throw new Exception\InvalidPasswordException();
         }    
         else{
             throw new Exception\SigninException();
         }
-       
-        
-        
     }
     
     /**
