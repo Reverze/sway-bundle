@@ -42,6 +42,7 @@ class Controller extends \Symfony\Bundle\FrameworkBundle\Controller\Controller
      */
     private function initializeKernel()
     {
+        return;
         /**
          * Gets swaykernel as service
          */
