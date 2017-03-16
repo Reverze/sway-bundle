@@ -2,10 +2,10 @@
     "name": "rev/sway-bundle",
     "type": "symfony-bundle",
     "description": "Swayengine Wrapper for symfony",
-    "authors": {
+    "authors": [{
         "name": "Reverze",
         "email": "hawkmedia24@gmail.com"
-    },
+    }],
     "minimum-stability": "dev",
     "require": {},
     "autoload": {
