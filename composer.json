@@ -6,7 +6,6 @@
         "name": "Reverze",
         "email": "hawkmedia24@gmail.com"
     }],
-    "minimum-stability": "dev",
     "require": {
         "rev/swayemu-user": "dev-dev"
     },
