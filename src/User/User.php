@@ -273,40 +273,139 @@ class User
         return (bool) $finishResult;
     }
 
-    
     /**
-     * Sets user's name
-     * Returns true on successfull change, returns false on failure
-     * @param string $userName
+     * Sends en email with authorize code to change user's password.
+     * @param string $newPassword
      * @return bool
+     * @throws Exception\AccountNotConfirmedException
+     * @throws Exception\InvalidPasswordException
      */
-    public function setUserName(string $userName)
+    public function beginPasswordChange(string $newPassword)
     {
-        return \SWUserStatement::ChangeUserNick($this->userObject->current_id, $userName); 
+        $beginResult = $this->userObject->beginPasswordChange($newPassword);
+
+        if ($beginResult === XAUserGeneric::EMPTY_USER_PASSWORD || $beginResult === XAUserGeneric::UNEXPECTED_ERROR ||
+            $beginResult === XAUserGeneric::INVALID_USER_ID){
+            return false;
+        }
+
+        if ($beginResult === XAUserGeneric::ACCOUNT_NOT_CONFIRMED_DENIED){
+            throw new Exception\AccountNotConfirmedException();
+        }
+
+        if ($beginResult === XAUserGeneric::INVALID_USER_PASSWORD){
+            throw new Exception\InvalidPasswordException();
+        }
+
+        return (bool) $beginResult;
     }
-    
+
     /**
-     * Sets user's email address
-     * Returns true on successfull change, returns false on failure
-     * @param string $emailAddress
+     * Finishes password change
+     * @param string $authorizeCode
      * @return bool
+     * @throws Exception\InvalidAuthorizeCodeException
      */
-    public function setEmailAddress(string $emailAddress)
+    public function finishPasswordChange(string $authorizeCode)
     {
-        return \SWUserStatement::ChangeUserEmail($this->userObject->current_id, $emailAddress);
+        $finishResult = $this->userObject->finishPasswordChange($authorizeCode);
+
+        if ($finishResult === XAUserGeneric::INVALID_USER_ID || $finishResult === XAUserGeneric::UNEXPECTED_ERROR ||
+            $finishResult === XAUserGeneric::USER_NOT_FOUND){
+            return false;
+        }
+
+        if ($finishResult === XAUserGeneric::INVALID_AUTHORIZE_CODE){
+            throw new Exception\InvalidAuthorizeCodeException();
+        }
+
+        return (bool) $finishResult;
     }
-    
+
     /**
-     * Sets user's primary group by group's ID
-     * Returns true on successfull change, returns false on failure
-     * @param int $groupID
+     * Creates an ask to change email address. Email message will be sent to current user mailbox,
+     * with authorize code which will be used to confirm ask.
+     * @param string $newEmailAddress
      * @return bool
+     * @throws Exception\AccountNotConfirmedException
+     * @throws Exception\InvalidEmailAddressException
      */
-    public function setGroupID(int $groupID)
+    public function createAskForChangeEmailAddress(string $newEmailAddress)
     {
-        return \SWUserStatement::ChangeUserGroup($this->userObject->current_id, $groupID);
+        $askResult = $this->userObject->createAskEmailAddressChange($newEmailAddress);
+
+        if ($askResult === XAUserGeneric::INVALID_USER_ID || $askResult === XAUserGeneric::UNEXPECTED_ERROR ||
+            $askResult === XAUserGeneric::EMPTY_EMAIL_ADDRESS){
+            return false;
+        }
+
+        if ($askResult === XAUserGeneric::ACCOUNT_NOT_CONFIRMED_DENIED){
+            throw new Exception\AccountNotConfirmedException();
+        }
+
+        if ($askResult === XAUserGeneric::INVALID_EMAIL_ADDRESS){
+            throw new Exception\InvalidEmailAddressException();
+        }
+
+        return (bool) $askResult;
     }
-    
+
+    /**
+     * Acepts ask for change email address. After that, next email message will be send to new user mailbox
+     * with authorize code to confirm an new email address.
+     * @param string $authorizeCode
+     * @return bool
+     * @throws Exception\AccountNotConfirmedException
+     * @throws Exception\InvalidAuthorizeCodeException
+     */
+    public function acceptAskForChangeEmailAddress(string $authorizeCode)
+    {
+        $acceptResult = $this->userObject->acceptAskEmailAddressChange($authorizeCode);
+
+        if ($acceptResult === XAUserGeneric::INVALID_USER_ID || $acceptResult === XAUserGeneric::UNEXPECTED_ERROR ||
+            $acceptResult === XAUserGeneric::USER_NOT_FOUND){
+            return false;
+        }
+
+        if ($acceptResult === XAUserGeneric::ACCOUNT_NOT_CONFIRMED_DENIED){
+            throw new Exception\AccountNotConfirmedException();
+        }
+
+        if ($acceptResult === XAUserGeneric::INVALID_AUTHORIZE_CODE){
+            throw new Exception\InvalidAuthorizeCodeException();
+        }
+
+        return (bool) $acceptResult;
+    }
+
+    /**
+     * Finishes email address change action.
+     * @param string $authorizeCode
+     * @return bool
+     * @throws Exception\AccountNotConfirmedException
+     * @throws Exception\InvalidAuthorizeCodeException
+     */
+    public function finishChangeEmailAddress(string $authorizeCode)
+    {
+        $finishResult = $this->userObject->finishEmailAddressChange($authorizeCode);
+
+        if ($finishResult === XAUserGeneric::INVALID_USER_ID || $acceptResult === XAUserGeneric::UNEXPECTED_ERROR ||
+            $finishResult === XAUserGeneric::USER_NOT_FOUND){
+            return false;
+        }
+
+        if ($acceptResult === XAUserGeneric::ACCOUNT_NOT_CONFIRMED_DENIED){
+            throw new Exception\AccountNotConfirmedException();
+        }
+
+        if ($acceptResult === XAUserGeneric::INVALID_AUTHORIZE_CODE){
+            throw new Exception\InvalidAuthorizeCodeException();
+        }
+
+        return (bool) $finishResult;
+    }
+
+
     /**
      * Sets user's avatar url
      * @param string $avatarUrl
