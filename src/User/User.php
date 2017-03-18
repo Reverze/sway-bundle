@@ -5,6 +5,7 @@ namespace SwayBundle\User;
 use SwayBundle\Core\Kernel;
 use SwayBundle\User\Exception;
 use XA\PlatformClient\Controller\User\XAUser;
+use XA\PlatformClient\Controller\User\XAUserGeneric;
 
 class User
 {
@@ -222,6 +223,56 @@ class User
             throw new Exception\SigninException();
         }
     }
+
+    /**
+     * Sends an email message with authorize code to change user name.
+     * @param string $userName
+     * @return bool|int
+     * @throws Exception\AccountNotConfirmedException
+     * @throws Exception\InvalidUserNameException
+     */
+    public function beginUserNameChange(string $userName)
+    {
+        $beginResult = $this->userObject->beginUsernameChange($userName);
+
+        if ($beginResult === XAUser::THE_SAME_NAME || $beginResult === XAUserGeneric::INVALID_USER_ID
+            || $beginResult === XAUserGeneric::EMPTY_USERNAME || $beginResult === XAUserGeneric::UNEXPECTED_ERROR){
+            return false;
+        }
+
+        if ($beginResult === XAUserGeneric::ACCOUNT_NOT_CONFIRMED_DENIED){
+            throw new Exception\AccountNotConfirmedException();
+        }
+
+        if ($beginResult === XAUserGeneric::INVALID_USER_NAME){
+            throw new Exception\InvalidUserNameException();
+        }
+
+        return $beginResult;
+    }
+
+    /**
+     * Finishes user name change.
+     * @param string $authorizeCode
+     * @return bool
+     * @throws Exception\InvalidAuthorizeCodeException
+     */
+    public function finishUserNameChange(string $authorizeCode)
+    {
+        $finishResult = $this->userObject->finishUsernameChange($authorizeCode);
+
+        if ($finishResult === XAUserGeneric::UNEXPECTED_ERROR || $finishResult === XAUserGeneric::USER_NOT_FOUND
+            || $finishResult === XAUserGeneric::INVALID_USER_ID){
+            return false;
+        }
+
+        if ($finishResult === XAUserGeneric::INVALID_AUTHORIZE_CODE){
+            throw new Exception\InvalidAuthorizeCodeException();
+        }
+
+        return (bool) $finishResult;
+    }
+
     
     /**
      * Sets user's name
