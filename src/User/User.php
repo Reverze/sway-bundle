@@ -4,8 +4,10 @@ namespace SwayBundle\User;
 
 use SwayBundle\Core\Kernel;
 use SwayBundle\User\Exception;
+use XA\PlatformClient\Controller\User\Exception\UserException;
 use XA\PlatformClient\Controller\User\XAUser;
 use XA\PlatformClient\Controller\User\XAUserGeneric;
+use XA\PlatformClient\Enum\WebService;
 
 class User
 {
@@ -389,16 +391,16 @@ class User
     {
         $finishResult = $this->userObject->finishEmailAddressChange($authorizeCode);
 
-        if ($finishResult === XAUserGeneric::INVALID_USER_ID || $acceptResult === XAUserGeneric::UNEXPECTED_ERROR ||
+        if ($finishResult === XAUserGeneric::INVALID_USER_ID || $finishResult === XAUserGeneric::UNEXPECTED_ERROR ||
             $finishResult === XAUserGeneric::USER_NOT_FOUND){
             return false;
         }
 
-        if ($acceptResult === XAUserGeneric::ACCOUNT_NOT_CONFIRMED_DENIED){
+        if ($finishResult === XAUserGeneric::ACCOUNT_NOT_CONFIRMED_DENIED){
             throw new Exception\AccountNotConfirmedException();
         }
 
-        if ($acceptResult === XAUserGeneric::INVALID_AUTHORIZE_CODE){
+        if ($finishResult === XAUserGeneric::INVALID_AUTHORIZE_CODE){
             throw new Exception\InvalidAuthorizeCodeException();
         }
 
@@ -407,24 +409,58 @@ class User
 
 
     /**
-     * Sets user's avatar url
+     * Changes user avatar
      * @param string $avatarUrl
      * @return bool
+     * @throws Exception\AccountNotConfirmedException
+     * @throws Exception\ResourceNotAvailableException
+     * @throws Exception\ResourceNotFoundException
+     * @throws Exception\WebServiceNotAvailableException
      */
-    public function setAvatarUrl(string $avatarUrl = null)
+    public function changeUserAvatar(string $avatarUrl)
     {
-        return \SWUserStatement::setAvatarUri($this->userObject->current_id, $avatarUrl);
+        $updateResult = $this->userObject->changeAvatar($avatarUrl);
+
+        if ($updateResult === XAUserGeneric::INVALID_USER_ID || $updateResult === XAUserGeneric::UNEXPECTED_ERROR ||
+            $updateResult === XAUserGeneric::USER_NOT_FOUND){
+            return false;
+        }
+
+        if ($updateResult === XAUserGeneric::ACCOUNT_NOT_CONFIRMED_DENIED){
+            throw new Exception\AccountNotConfirmedException();
+        }
+
+        if ($updateResult === WebService::NOT_AVAILABLE){
+            throw new Exception\WebServiceNotAvailableException();
+        }
+
+        if ($updateResult === WebService::RESOURCE_NOT_FOUND){
+            throw new Exception\ResourceNotFoundException();
+        }
+
+        if ($updateResult === WebService::RESOURCE_NOT_AVAILABLE){
+            throw new Exception\ResourceNotAvailableException();
+        }
+
+        return (bool) $updateResult;//true
     }
-    
+
     /**
-     * Sets multi-session 'enabled' state for user
-     * @param bool $multiSessionEnabledState
-     * @return boolean
+     * Drops user avatar
+     * @return bool
      */
-    public function setMultiSessionEnabledState(bool $multiSessionEnabledState = false)
+    public function dropUserAvatar()
     {
-        return $this->userObject->setMultiSessionEnabledState($multiSessionEnabledState);
+        $dropResult = $this->userObject->dropAvatar();
+
+        if ($dropResult === XAUserGeneric::INVALID_USER_ID || $dropResult === XAUserGeneric::UNEXPECTED_ERROR){
+            return false;
+        }
+
+        return (bool) $dropResult;//true
     }
+
+
     
     /**
      * Checks if user's name is free
@@ -433,7 +469,7 @@ class User
      */
     public function isFreeUserName(string $userName)
     {
-        return !(bool) \SWUserStatement::GetUserIDByNick($userName);
+        return $this->userObject->getGeneric()->isUserNameAvailable($userName);
     }
     
     /**
@@ -445,11 +481,21 @@ class User
     {
         return (bool) preg_match('/^[a-zA-Z0-9\\sążźćęśółńĄŻŹŚĆĘÓŃŁ\\[\\]]+$/', $userName);
     }
-    
-    
+
+    /**
+     * Verifies user password
+     * @param string $password
+     * @return bool
+     */
     public function verifyPassword(string $password)
     {
-        return \SWUserStatement::CheckPassword($password . $this->userObject->current_salt, $this->userObject->current_password);
+        $verifyResult = $this->userObject->verifyUserPassword($password);
+
+        if ($verifyResult === XAUserGeneric::UNEXPECTED_ERROR){
+            return false;
+        }
+
+        return (bool) $verifyResult;//true or false
     }
     
     /**
@@ -488,65 +534,98 @@ class User
         }
         
     }
-    
+
     /**
-     * Validates confirm code
+     * Confirms user account
      * @param string $confirmCode
-     * @return bool True if valid, False if invalid
+     * @return bool
+     * @throws Exception\AccountAlreadyConfirmedException
      */
-    public function validateConfirmCode(string $confirmCode) : bool
+    public function confirmAccount(string $confirmCode) : bool
     {
-        return \SWUserStatement::validateConfirmCode($this->getUserID(), $confirmCode);
-    }
-    
-    /**
-     * Sets account an confirmed
-     * @return bool True on success, False on failure
-     */
-    public function confirmAccount() : bool
-    {
-        return \SWUserStatement::setUserAsConfirmed($this->getUserID());
-    }
-    
-    /**
-     * Sets acount an unconfirmed
-     * @return bool True on success, False on failure
-     */
-    public function unconfirmAccount() : bool
-    {
-        return \SWUserStatement::setUserAsNotconfirmed($this->getUserID());
-    }
-    
-    /**
-     * Generated and assigns confirm code
-     * @return array
-     */
-    public function generateNewConfirmCode() : array
-    {
-        /**
-         * Newly generated confirm code for user
-         */
-        $generatedConfirmCode = \SWUserStatement::generateConfirmCode();
-        
-        /**
-         * Result of assign confirm code to user
-         */
-        $actionResult = null;
-        
-        if (\SWUserStatement::isUserHasConfirmCode($this->getUserID())) {
-            $actionResult = \SWUserStatement::changeConfirmCode($this->getUserID(), $generatedConfirmCode);
-        } 
-        else {
-            $actionResult = \SWUserStatement::createConfirmCodeTask($this->getUserID(), $generatedConfirmCode);
+        $confirmResult = null;
+        try {
+            $confirmResult = $this->userObject->confirmAccount($confirmCode);
+
+            if ($confirmResult === XAUserGeneric::INVALID_USER_ID || $confirmResult === XAUserGeneric::EMPTY_CONFIRM_CODE){
+                return false;
+            }
+
+            if ($confirmResult === XAUserGeneric::ACCOUNT_ALREADY_CONFIRMED){
+                throw new Exception\AccountAlreadyConfirmedException();
+            }
+
+            return (bool) $confirmResult; //true or false
         }
-        
-        return [
-            'confirmCode' => $generatedConfirmCode,
-            'result' => $actionResult
-        ];
+        catch(UserException $exception){
+            throw new Exception\AccountAlreadyConfirmedException();
+        }
     }
-    
-    
+
+    /**
+     * Resend confirm code
+     * @param null $newEmailAddress
+     * @return bool
+     * @throws Exception\AccountAlreadyConfirmedException
+     */
+    public function resendConfirmCode($newEmailAddress = null)
+    {
+        $resendResult = $this->userObject->resendConfirmCode($newEmailAddress);
+
+        if ($resendResult === XAUserGeneric::INVALID_USER_ID ||
+            $resendResult === XAUserGeneric::UNEXPECTED_ERROR){
+            return false;
+        }
+
+        if ($resendResult === XAUserGeneric::ACCOUNT_ALREADY_CONFIRMED){
+            throw new Exception\AccountAlreadyConfirmedException();
+        }
+
+        return (bool) $resendResult;
+    }
+
+
+    /**
+     * Reminds user's name
+     * @param string $emailAddress
+     * @return bool
+     * @throws Exception\UserNotFoundException
+     */
+    public function remindUsername(string $emailAddress)
+    {
+        $remindResult = $this->userObject->remindUsername($emailAddress);
+
+        if ($remindResult === XAUserGeneric::USER_NOT_FOUND){
+            throw new Exception\UserNotFoundException();
+        }
+
+        if ($remindResult === XAUserGeneric::UNEXPECTED_ERROR){
+            return false;
+        }
+
+        return (bool) $remindResult;
+    }
+
+    /**
+     * Reminds user's password
+     * @param string $emailAddress
+     * @return bool
+     * @throws Exception\UserNotFoundException
+     */
+    public function remindPassword(string $emailAddress)
+    {
+        $remindResult = $this->userObject->remindPassword($emailAddress);
+
+        if ($remindResult === XAUserGeneric::USER_NOT_FOUND){
+            throw new Exception\UserNotFoundException();
+        }
+
+        if ($remindResult === XAUserGeneric::UNEXPECTED_ERROR){
+            return false;
+        }
+
+        return (bool) $remindResult;
+    }
     
     
     
