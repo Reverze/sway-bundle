@@ -1,8 +1,8 @@
 ---
 parameters:
-    email.default.broadcaster: "account@swayware.eu"
-    swaybundle.platformprovider: "51.254.218.121:3000"
-    swaybundle.platformappkey: "ysnU62bsGt2i9sTBAs"
+    email.default.broadcaster: account@mydomain.com
+    swaybundle.platformprovider: ""
+    swaybundle.platformappkey: ""
     swaybundle.platformclient.cache.driver: "apcu"
     swaybundle.platformclient.cache.lifetimemultiplier: 2
     swaybundle.platformclient.cache.params: []

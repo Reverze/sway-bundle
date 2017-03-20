@@ -3,6 +3,7 @@
 namespace SwayBundle\Core;
 
 use SwayBundle\Provider\Connector;
+use SwayBundle\Provider\Exception\MissedConfigurationParameterException;
 use Symfony\Component\Filesystem\Exception\FileNotFoundException;
 use Symfony\Component\Config\Exception\FileLoaderLoadException;
 
@@ -55,6 +56,15 @@ class Kernel
     public function __construct(string $platformProvider, string $platformAppKey, string $cacheDriver,
                                 int $cacheLifetimeMultiplier, array $cacheParameters = array())
     {
+        if (!strlen($platformProvider)){
+            throw new MissedConfigurationParameterException('swaybundle.platformprovider');
+        }
+
+        if (!strlen($platformAppKey)){
+            throw new MissedConfigurationParameterException('swaybundle.platformappkey');
+        }
+
+
         /**
          * Given value has format: "providerhostname:providerport";
          */
