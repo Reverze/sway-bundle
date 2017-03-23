@@ -2,56 +2,41 @@
 
 namespace SwayBundle\User;
 
+use SwayBundle\Core\Kernel;
 use SwayBundle\User\Exception;
+use XA\PlatformClient\Controller\User\Exception\UserException;
+use XA\PlatformClient\Controller\User\XAUser;
+use XA\PlatformClient\Controller\User\XAUserGeneric;
+use XA\PlatformClient\Enum\WebService;
 
 class User
 {
+
     /**
-     * SWUse's object (sway runtime)
-     * @var \SWUser
+     * @var \XA\PlatformClient\Controller\User\XAUser
      */
     private $userObject = null;
-    
-    private $releaseCookiesOnSignin = false;
-    
+
     /**
-     * Wrapper for SWUser class. Its working on 'SW_USER' global variables
-     * @throws \SWAuthBundle\User\Exception\InitializeException
+     * @var \SwayBundle\Core\Kernel
      */
-    public function __construct(bool $releaseCookiesOnSignin = false, \SWUser $externalUserObject = null)
-    {
-        $this->releaseCookiesOnSignin = (bool) $releaseCookiesOnSignin;
-        
-        /**
-         * If external user's object is defined
-         */
-        if (!empty($externalUserObject)){
-            $this->userObject = $externalUserObject;
-        }
-        
-        if (class_exists("SWUser") && empty($this->userObject)){
-            $this->initializeUserObject();
-        }
-        else if (!class_exists("SWUser")){
-            throw new Exception\InitializeException();
-        }     
-    }
+    private $kernel = null;
     
+
+    public function __construct(Kernel $kernel)
+    {
+        $this->kernel = $kernel;
+
+        $this->initializeUserObject();
+    }
+
+
     /**
-     * Initialize from global variable SW_USER derived by swayengine
-     * @global \SWUser $SW_USER
-     * @throws \SWAuthBundle\User\Exception\InstanceException
+     * Initializes user object
      */
     private function initializeUserObject()
     {
-        global $SW_USER;
-        
-        if ($SW_USER instanceof \SWUser){
-            $this->userObject = $SW_USER;
-        }
-        else{
-            throw new Exception\InstanceException();
-        }
+        $this->userObject = $this->kernel->getPlatformHandler()->getUser();
     }
     
     /**
@@ -60,7 +45,7 @@ class User
      */
     public function isOnline()
     {
-        return (bool) $this->userObject->IsLogged();
+        return (bool) $this->userObject->isOnline();
     }
     
     /**
@@ -70,7 +55,7 @@ class User
      */
     public function signoff()
     {
-        return (bool) $this->userObject->Logout();
+        return (bool) $this->userObject->logout(true);
     }
     
     /**
@@ -79,7 +64,7 @@ class User
      */
     public function getUserID()
     {
-        return (int) $this->userObject->current_id;
+        return (int) $this->userObject->getUserId();
     }
     
     /**
@@ -88,7 +73,7 @@ class User
      */
     public function getUserName()
     {
-        return (string) $this->userObject->current_nick;
+        return (string) $this->userObject->getUserName();
     }
     
     /**
@@ -97,45 +82,28 @@ class User
      */
     public function getEmailAddress()
     {
-        return (string) $this->userObject->current_email;
+        return (string) $this->userObject->getEmail();
     }
-    
-    /**
-     * Gets hashed form of user's password
-     * @return string
-     */
-    public function getPasswordHash()
-    {
-        return (string) $this->userObject->current_password;
-    }
-    
-    /**
-     * Gets password's salt
-     * @return string
-     */
-    public function getPasswordSalt()
-    {
-        return (string) $this->userObject->current_salt;
-    }
-    
+
+
     /**
      * Gets primary user's group' ID
-     * @return integer
+     * @return string
      */
     public function getGroupID()
     {
-        return (int) $this->userObject->current_user_group;
+        return  $this->userObject->getUserGroupId();
     }
-    
+
     /**
      * Gets assigned flag to user's account (user and group)
      * @return array
      */
     public function getAssignedFlags()
     {
-        return (array) $this->userObject->current_flags;   
+        return array("z");
     }
-    
+
     /**
      * Gets register time
      * @param string $format
@@ -144,10 +112,10 @@ class User
     public function getRegistertime(string $format = null)
     {
         if (!empty($format)){
-            return (string) date($format, $this->userObject->register_time);
+            return (string) date($format, $this->userObject->getRegisterTime());
         }
         else{
-            return (int) $this->userObject->register_time;
+            return (int) $this->userObject->getRegisterTime();
         }
     }
     
@@ -157,7 +125,7 @@ class User
      */
     public function getRegisterIpAddress()
     {
-        return (string) $this->userObject->register_ip_addr;
+        return (string) $this->userObject->getRegisterIpAddress();
     }
     
     /**
@@ -167,7 +135,7 @@ class User
      */
     public function getAvatarUri()
     {
-        return (string) $this->userObject->avatarUri;
+        return (string) $this->userObject->getAvatarUrl();
     }
     
     /**
@@ -176,136 +144,323 @@ class User
      */
     public function isConfirmed()
     {
-        return (bool) $this->userObject->confirmed;
+        return (bool) $this->userObject->isAccountConfirmed();
     }
-    
+
+
     /**
-     * Checks if multi-session is enabled for user
-     * @return boolean
+     * Creates a new user account
+     * @param string $nickname
+     * @param string $emailaddress
+     * @param string $rawpassword
+     * @return bool
+     * @throws Exception\ConfirmCodeException
+     * @throws Exception\ConfirmMailException
+     * @throws Exception\CreateException
+     * @throws Exception\EmailReservedException
+     * @throws Exception\EmptyUserNameException
+     * @throws Exception\EmptyUserPasswordException
+     * @throws Exception\InvalidEmailAddressException
+     * @throws Exception\NameReservedException
      */
-    public function isMultiSessionEnabled()
+    public function signup(string $nickname, string $emailaddress, string $rawpassword)
     {
-        return (bool) $this->userObject->isMultiSessionEnabled();
-    }
-    
-    /**
-     * Create a new user account
-     * @param string $nickname User's nickname
-     * @param string $emailaddress Email address which will be assigned into account
-     * @param type $rawpassword Raw user's password
-     * @throws \SWAuthBundle\User\Exception\NameReservedException
-     * @throws \SWAuthBundle\User\Exception\EmailReservedException
-     * @throws \SWAuthBundle\User\Exception\ClientAuthenticationException
-     * @throws \SWAuthBundle\User\Exception\PasswordHashException
-     * @throws \SWAuthBundle\User\Exception\CreateException
-     */
-    public function signup(string $nickname, string $emailaddress, $rawpassword)
-    {
-        $signupStatus = $this->userObject->Register($nickname, $rawpassword, $emailaddress);
+        $signupStatus = $this->userObject->register($nickname, $emailaddress, $rawpassword);
         
         switch ($signupStatus){
-            case 2:
+            case XAUser::EMPTY_USERNAME:
+                throw new Exception\EmptyUserNameException();
+                break;
+            case XAUser::EMPTY_USERPASSWORD:
+                throw new Exception\EmptyUserPasswordException();
+                break;
+            case XAUser::INVALID_EMAIL_ADDRESS:
+                throw new Exception\InvalidEmailAddressException();
+                break;
+            case XAUser::RESERVED_USER_NAME:
                 throw new Exception\NameReservedException($nickname);
                 break;
-            case 3:
+            case XAUser::RESERVED_EMAIL_ADDRESS:
                 throw new Exception\EmailReservedException($emailaddress);
                 break;
-            case 4:
-                throw new Exception\ClientAuthenticationException();
+            case XAUser::PREPARE_CONFIRMATION_FAILED:
+                throw new Exception\ConfirmCodeException();
                 break;
-            case 5:
-                throw new Exception\PasswordHashException();
+            case XAUser::MAIL_SEND_FAILED:
+                throw new Exception\ConfirmMailException();
                 break;
             case true:
+                return true;
                 break;
             default:
                 throw new Exception\CreateException();
                 break;      
         }   
     }
-    
+
     /**
-     * Sign in into user's account
+     * Signin to user account
      * @param string $useridentifier
-     * @param \SwayBundle\User\strign $rawpassword
+     * @param string $rawpassword
+     * @return bool
      * @throws Exception\ExistsException
      * @throws Exception\InvalidPasswordException
      * @throws Exception\SigninException
      */
     public function signin(string $useridentifier, string $rawpassword)
     {
-        $signinStatus = $this->userObject->Login($useridentifier, $rawpassword, $this->releaseCookiesOnSignin);
+        $signinStatus = $this->userObject->signin($useridentifier, $rawpassword);
         
-        if ($signinStatus === true){
+        if ($signinStatus === XAUser::OK){
             return true;
         }
         
-        else if ($signinStatus === 2 || $signinStatus === 6 || $signinStatus === 7){
+        else if ($signinStatus === XAUser::USER_NOT_FOUND){
             throw new Exception\ExistsException($useridentifier);
         }
-        else if ($signinStatus === 3){
+        else if ($signinStatus === XAUser::INVALID_PASSWORD){
             throw new Exception\InvalidPasswordException();
         }    
         else{
             throw new Exception\SigninException();
         }
-       
-        
-        
     }
-    
+
     /**
-     * Sets user's name
-     * Returns true on successfull change, returns false on failure
+     * Sends an email message with authorize code to change user name.
      * @param string $userName
-     * @return bool
+     * @return bool|int
+     * @throws Exception\AccountNotConfirmedException
+     * @throws Exception\InvalidUserNameException
      */
-    public function setUserName(string $userName)
+    public function beginUserNameChange(string $userName)
     {
-        return \SWUserStatement::ChangeUserNick($this->userObject->current_id, $userName); 
+        $beginResult = $this->userObject->beginUsernameChange($userName);
+
+        if ($beginResult === XAUser::THE_SAME_NAME || $beginResult === XAUserGeneric::INVALID_USER_ID
+            || $beginResult === XAUserGeneric::EMPTY_USERNAME || $beginResult === XAUserGeneric::UNEXPECTED_ERROR){
+            return false;
+        }
+
+        if ($beginResult === XAUserGeneric::ACCOUNT_NOT_CONFIRMED_DENIED){
+            throw new Exception\AccountNotConfirmedException();
+        }
+
+        if ($beginResult === XAUserGeneric::INVALID_USER_NAME){
+            throw new Exception\InvalidUserNameException();
+        }
+
+        return $beginResult;
     }
-    
+
     /**
-     * Sets user's email address
-     * Returns true on successfull change, returns false on failure
-     * @param string $emailAddress
+     * Finishes user name change.
+     * @param string $authorizeCode
      * @return bool
+     * @throws Exception\InvalidAuthorizeCodeException
      */
-    public function setEmailAddress(string $emailAddress)
+    public function finishUserNameChange(string $authorizeCode)
     {
-        return \SWUserStatement::ChangeUserEmail($this->userObject->current_id, $emailAddress);
+        $finishResult = $this->userObject->finishUsernameChange($authorizeCode);
+
+        if ($finishResult === XAUserGeneric::UNEXPECTED_ERROR || $finishResult === XAUserGeneric::USER_NOT_FOUND
+            || $finishResult === XAUserGeneric::INVALID_USER_ID){
+            return false;
+        }
+
+        if ($finishResult === XAUserGeneric::INVALID_AUTHORIZE_CODE){
+            throw new Exception\InvalidAuthorizeCodeException();
+        }
+
+        return (bool) $finishResult;
     }
-    
+
     /**
-     * Sets user's primary group by group's ID
-     * Returns true on successfull change, returns false on failure
-     * @param int $groupID
+     * Sends en email with authorize code to change user's password.
+     * @param string $newPassword
      * @return bool
+     * @throws Exception\AccountNotConfirmedException
+     * @throws Exception\InvalidPasswordException
      */
-    public function setGroupID(int $groupID)
+    public function beginPasswordChange(string $newPassword)
     {
-        return \SWUserStatement::ChangeUserGroup($this->userObject->current_id, $groupID);
+        $beginResult = $this->userObject->beginPasswordChange($newPassword);
+
+        if ($beginResult === XAUserGeneric::EMPTY_USER_PASSWORD || $beginResult === XAUserGeneric::UNEXPECTED_ERROR ||
+            $beginResult === XAUserGeneric::INVALID_USER_ID){
+            return false;
+        }
+
+        if ($beginResult === XAUserGeneric::ACCOUNT_NOT_CONFIRMED_DENIED){
+            throw new Exception\AccountNotConfirmedException();
+        }
+
+        if ($beginResult === XAUserGeneric::INVALID_USER_PASSWORD){
+            throw new Exception\InvalidPasswordException();
+        }
+
+        return (bool) $beginResult;
     }
-    
+
     /**
-     * Sets user's avatar url
+     * Finishes password change
+     * @param string $authorizeCode
+     * @return bool
+     * @throws Exception\InvalidAuthorizeCodeException
+     */
+    public function finishPasswordChange(string $authorizeCode)
+    {
+        $finishResult = $this->userObject->finishPasswordChange($authorizeCode);
+
+        if ($finishResult === XAUserGeneric::INVALID_USER_ID || $finishResult === XAUserGeneric::UNEXPECTED_ERROR ||
+            $finishResult === XAUserGeneric::USER_NOT_FOUND){
+            return false;
+        }
+
+        if ($finishResult === XAUserGeneric::INVALID_AUTHORIZE_CODE){
+            throw new Exception\InvalidAuthorizeCodeException();
+        }
+
+        return (bool) $finishResult;
+    }
+
+    /**
+     * Creates an ask to change email address. Email message will be sent to current user mailbox,
+     * with authorize code which will be used to confirm ask.
+     * @param string $newEmailAddress
+     * @return bool
+     * @throws Exception\AccountNotConfirmedException
+     * @throws Exception\InvalidEmailAddressException
+     */
+    public function createAskForChangeEmailAddress(string $newEmailAddress)
+    {
+        $askResult = $this->userObject->createAskEmailAddressChange($newEmailAddress);
+
+        if ($askResult === XAUserGeneric::INVALID_USER_ID || $askResult === XAUserGeneric::UNEXPECTED_ERROR ||
+            $askResult === XAUserGeneric::EMPTY_EMAIL_ADDRESS){
+            return false;
+        }
+
+        if ($askResult === XAUserGeneric::ACCOUNT_NOT_CONFIRMED_DENIED){
+            throw new Exception\AccountNotConfirmedException();
+        }
+
+        if ($askResult === XAUserGeneric::INVALID_EMAIL_ADDRESS){
+            throw new Exception\InvalidEmailAddressException();
+        }
+
+        return (bool) $askResult;
+    }
+
+    /**
+     * Acepts ask for change email address. After that, next email message will be send to new user mailbox
+     * with authorize code to confirm an new email address.
+     * @param string $authorizeCode
+     * @return bool
+     * @throws Exception\AccountNotConfirmedException
+     * @throws Exception\InvalidAuthorizeCodeException
+     */
+    public function acceptAskForChangeEmailAddress(string $authorizeCode)
+    {
+        $acceptResult = $this->userObject->acceptAskEmailAddressChange($authorizeCode);
+
+        if ($acceptResult === XAUserGeneric::INVALID_USER_ID || $acceptResult === XAUserGeneric::UNEXPECTED_ERROR ||
+            $acceptResult === XAUserGeneric::USER_NOT_FOUND){
+            return false;
+        }
+
+        if ($acceptResult === XAUserGeneric::ACCOUNT_NOT_CONFIRMED_DENIED){
+            throw new Exception\AccountNotConfirmedException();
+        }
+
+        if ($acceptResult === XAUserGeneric::INVALID_AUTHORIZE_CODE){
+            throw new Exception\InvalidAuthorizeCodeException();
+        }
+
+        return (bool) $acceptResult;
+    }
+
+    /**
+     * Finishes email address change action.
+     * @param string $authorizeCode
+     * @return bool
+     * @throws Exception\AccountNotConfirmedException
+     * @throws Exception\InvalidAuthorizeCodeException
+     */
+    public function finishChangeEmailAddress(string $authorizeCode)
+    {
+        $finishResult = $this->userObject->finishEmailAddressChange($authorizeCode);
+
+        if ($finishResult === XAUserGeneric::INVALID_USER_ID || $finishResult === XAUserGeneric::UNEXPECTED_ERROR ||
+            $finishResult === XAUserGeneric::USER_NOT_FOUND){
+            return false;
+        }
+
+        if ($finishResult === XAUserGeneric::ACCOUNT_NOT_CONFIRMED_DENIED){
+            throw new Exception\AccountNotConfirmedException();
+        }
+
+        if ($finishResult === XAUserGeneric::INVALID_AUTHORIZE_CODE){
+            throw new Exception\InvalidAuthorizeCodeException();
+        }
+
+        return (bool) $finishResult;
+    }
+
+
+    /**
+     * Changes user avatar
      * @param string $avatarUrl
      * @return bool
+     * @throws Exception\AccountNotConfirmedException
+     * @throws Exception\ResourceNotAvailableException
+     * @throws Exception\ResourceNotFoundException
+     * @throws Exception\WebServiceNotAvailableException
      */
-    public function setAvatarUrl(string $avatarUrl = null)
+    public function changeUserAvatar(string $avatarUrl)
     {
-        return \SWUserStatement::setAvatarUri($this->userObject->current_id, $avatarUrl);
+        $updateResult = $this->userObject->changeAvatar($avatarUrl);
+
+        if ($updateResult === XAUserGeneric::INVALID_USER_ID || $updateResult === XAUserGeneric::UNEXPECTED_ERROR ||
+            $updateResult === XAUserGeneric::USER_NOT_FOUND){
+            return false;
+        }
+
+        if ($updateResult === XAUserGeneric::ACCOUNT_NOT_CONFIRMED_DENIED){
+            throw new Exception\AccountNotConfirmedException();
+        }
+
+        if ($updateResult === WebService::NOT_AVAILABLE){
+            throw new Exception\WebServiceNotAvailableException();
+        }
+
+        if ($updateResult === WebService::RESOURCE_NOT_FOUND){
+            throw new Exception\ResourceNotFoundException();
+        }
+
+        if ($updateResult === WebService::RESOURCE_NOT_AVAILABLE){
+            throw new Exception\ResourceNotAvailableException();
+        }
+
+        return (bool) $updateResult;//true
     }
-    
+
     /**
-     * Sets multi-session 'enabled' state for user
-     * @param bool $multiSessionEnabledState
-     * @return boolean
+     * Drops user avatar
+     * @return bool
      */
-    public function setMultiSessionEnabledState(bool $multiSessionEnabledState = false)
+    public function dropUserAvatar()
     {
-        return $this->userObject->setMultiSessionEnabledState($multiSessionEnabledState);
+        $dropResult = $this->userObject->dropAvatar();
+
+        if ($dropResult === XAUserGeneric::INVALID_USER_ID || $dropResult === XAUserGeneric::UNEXPECTED_ERROR){
+            return false;
+        }
+
+        return (bool) $dropResult;//true
     }
+
+
     
     /**
      * Checks if user's name is free
@@ -314,7 +469,7 @@ class User
      */
     public function isFreeUserName(string $userName)
     {
-        return !(bool) \SWUserStatement::GetUserIDByNick($userName);
+        return $this->userObject->getGeneric()->isUserNameAvailable($userName);
     }
     
     /**
@@ -326,11 +481,21 @@ class User
     {
         return (bool) preg_match('/^[a-zA-Z0-9\\sążźćęśółńĄŻŹŚĆĘÓŃŁ\\[\\]]+$/', $userName);
     }
-    
-    
+
+    /**
+     * Verifies user password
+     * @param string $password
+     * @return bool
+     */
     public function verifyPassword(string $password)
     {
-        return \SWUserStatement::CheckPassword($password . $this->userObject->current_salt, $this->userObject->current_password);
+        $verifyResult = $this->userObject->verifyUserPassword($password);
+
+        if ($verifyResult === XAUserGeneric::UNEXPECTED_ERROR){
+            return false;
+        }
+
+        return (bool) $verifyResult;//true or false
     }
     
     /**
@@ -369,65 +534,98 @@ class User
         }
         
     }
-    
+
     /**
-     * Validates confirm code
+     * Confirms user account
      * @param string $confirmCode
-     * @return bool True if valid, False if invalid
+     * @return bool
+     * @throws Exception\AccountAlreadyConfirmedException
      */
-    public function validateConfirmCode(string $confirmCode) : bool
+    public function confirmAccount(string $confirmCode) : bool
     {
-        return \SWUserStatement::validateConfirmCode($this->getUserID(), $confirmCode);
-    }
-    
-    /**
-     * Sets account an confirmed
-     * @return bool True on success, False on failure
-     */
-    public function confirmAccount() : bool
-    {
-        return \SWUserStatement::setUserAsConfirmed($this->getUserID());
-    }
-    
-    /**
-     * Sets acount an unconfirmed
-     * @return bool True on success, False on failure
-     */
-    public function unconfirmAccount() : bool
-    {
-        return \SWUserStatement::setUserAsNotconfirmed($this->getUserID());
-    }
-    
-    /**
-     * Generated and assigns confirm code
-     * @return array
-     */
-    public function generateNewConfirmCode() : array
-    {
-        /**
-         * Newly generated confirm code for user
-         */
-        $generatedConfirmCode = \SWUserStatement::generateConfirmCode();
-        
-        /**
-         * Result of assign confirm code to user
-         */
-        $actionResult = null;
-        
-        if (\SWUserStatement::isUserHasConfirmCode($this->getUserID())) {
-            $actionResult = \SWUserStatement::changeConfirmCode($this->getUserID(), $generatedConfirmCode);
-        } 
-        else {
-            $actionResult = \SWUserStatement::createConfirmCodeTask($this->getUserID(), $generatedConfirmCode);
+        $confirmResult = null;
+        try {
+            $confirmResult = $this->userObject->confirmAccount($confirmCode);
+
+            if ($confirmResult === XAUserGeneric::INVALID_USER_ID || $confirmResult === XAUserGeneric::EMPTY_CONFIRM_CODE){
+                return false;
+            }
+
+            if ($confirmResult === XAUserGeneric::ACCOUNT_ALREADY_CONFIRMED){
+                throw new Exception\AccountAlreadyConfirmedException();
+            }
+
+            return (bool) $confirmResult; //true or false
         }
-        
-        return [
-            'confirmCode' => $generatedConfirmCode,
-            'result' => $actionResult
-        ];
+        catch(UserException $exception){
+            throw new Exception\AccountAlreadyConfirmedException();
+        }
     }
-    
-    
+
+    /**
+     * Resend confirm code
+     * @param null $newEmailAddress
+     * @return bool
+     * @throws Exception\AccountAlreadyConfirmedException
+     */
+    public function resendConfirmCode($newEmailAddress = null)
+    {
+        $resendResult = $this->userObject->resendConfirmCode($newEmailAddress);
+
+        if ($resendResult === XAUserGeneric::INVALID_USER_ID ||
+            $resendResult === XAUserGeneric::UNEXPECTED_ERROR){
+            return false;
+        }
+
+        if ($resendResult === XAUserGeneric::ACCOUNT_ALREADY_CONFIRMED){
+            throw new Exception\AccountAlreadyConfirmedException();
+        }
+
+        return (bool) $resendResult;
+    }
+
+
+    /**
+     * Reminds user's name
+     * @param string $emailAddress
+     * @return bool
+     * @throws Exception\UserNotFoundException
+     */
+    public function remindUsername(string $emailAddress)
+    {
+        $remindResult = $this->userObject->remindUsername($emailAddress);
+
+        if ($remindResult === XAUserGeneric::USER_NOT_FOUND){
+            throw new Exception\UserNotFoundException();
+        }
+
+        if ($remindResult === XAUserGeneric::UNEXPECTED_ERROR){
+            return false;
+        }
+
+        return (bool) $remindResult;
+    }
+
+    /**
+     * Reminds user's password
+     * @param string $emailAddress
+     * @return bool
+     * @throws Exception\UserNotFoundException
+     */
+    public function remindPassword(string $emailAddress)
+    {
+        $remindResult = $this->userObject->remindPassword($emailAddress);
+
+        if ($remindResult === XAUserGeneric::USER_NOT_FOUND){
+            throw new Exception\UserNotFoundException();
+        }
+
+        if ($remindResult === XAUserGeneric::UNEXPECTED_ERROR){
+            return false;
+        }
+
+        return (bool) $remindResult;
+    }
     
     
     

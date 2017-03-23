@@ -5,10 +5,10 @@ services:
 
     swaykernelService:
         class: SwayBundle\Core\Kernel
-        arguments: [ "%swayframework.runtime_path%", "%swayframework.bin_file%", "%swayframework.loadmode%", "%swayframework.appidentifier%", "%swayframework.pwd%", "%swayframework.crossdomainssession%"  ]     
+        arguments: [ "%swaybundle.platformprovider%", "%swaybundle.platformappkey%", "%swaybundle.platformclient.cache.driver%", "%swaybundle.platformclient.cache.lifetimemultiplier%" ]
     swayuserService:
         class: SwayBundle\User\User
-        arguments: [ "%swayframework.swuser.releasecookiesaftersignin%" ]
+        arguments: [ "@swaykernelService" ]
     swayMailer:
         class: SwayBundle\Mail\Mailer
         arguments: [ "%email.default.broadcaster%" ]

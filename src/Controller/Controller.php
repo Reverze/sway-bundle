@@ -42,10 +42,13 @@ class Controller extends \Symfony\Bundle\FrameworkBundle\Controller\Controller
      */
     private function initializeKernel()
     {
+
         /**
          * Gets swaykernel as service
          */
         $this->kernelService = $this->get('swaykernelService');
+
+        return;
         
         /**
          * If service not found
@@ -137,12 +140,12 @@ class Controller extends \Symfony\Bundle\FrameworkBundle\Controller\Controller
             'name' => (string) $this->getSwayUser()->getUserName(),
             'uid' => (int) $this->getSwayUser()->getUserID(),
             'email' => (string) $this->getSwayUser()->getEmailAddress(),
-            'gid' => (int) $this->getSwayUser()->getGroupID(),
+            'gid' => $this->getSwayUser()->getGroupID(),
             'avatarurl' => (string) $this->getSwayUser()->getAvatarUri(),
             'registertime' => (int) $this->getSwayUser()->getRegistertime(),
             'registeripaddress' => (string) $this->getSwayUser()->getRegisterIpAddress(),
             'confirmed' => (bool) $this->getSwayUser()->isConfirmed(),
-            'multisessionenabled' => (bool) $this->getSwayUser()->isMultiSessionEnabled()
+            'multisessionenabled' => false
             
         ];
         

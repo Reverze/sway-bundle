@@ -2,163 +2,154 @@
 
 namespace SwayBundle\Core;
 
+use SwayBundle\Provider\Connector;
+use SwayBundle\Provider\Exception\MissedConfigurationParameterException;
 use Symfony\Component\Filesystem\Exception\FileNotFoundException;
 use Symfony\Component\Config\Exception\FileLoaderLoadException;
 
-use SwayBundle\Application\Exception\WorkingDirectoryException;
-use SwayBundle\Application\Exception\ApplicationIdentifierEmptyException;
+use SwayBundle\Provider\Exception\ProviderException;
+
 
 class Kernel
 {
     /**
-     * Sway framework path
+     * Platform provider hostname
      * @var string
      */
-    private $runtimePath = null;
-    
+    private $platformProviderHostName = null;
+
     /**
-     * Base script filename
+     * Platform provider port
+     * @var integer
+     */
+    private $platformProviderPort = null;
+
+    /**
+     * Platform application key
      * @var string
      */
-    private $binFile = null;
-    
+    private $platformApplicationKey = null;
+
     /**
-     * Load mode
+     * Platform client cache driver
      * @var string
      */
-    private $loadMode = null;
-    
+    private $cacheDriver = null;
+
     /**
-     * Application's identifier
-     * @var string
+     * Platform client -> cache lifetime multiplier
+     * @var integer
      */
-    private $appIdentifier = null;
-    
+    private $cacheLifetimeMultiplier = 1;
+
     /**
-     * Application's working directory path
-     * @var string
+     * Optional parameters for cache driver
+     * @var array
      */
-    private $workingDirectory = null;
-    
+    private $cacheDriverParameters = array();
+
     /**
-     * Determien if cross domains session is enabled
-     * @var boolean 
+     * @var \SwayBundle\Provider\Connector
      */
-    private $crossDomainsSessionEnabled = false;
+    private $platformConnectionHandler = null;
     
-    public function __construct(string $runtimePath, string $binFile, string $loadMode, string $appIdentifier, string $workingDirectory, bool $crossDomainSessionEnabled)
+    public function __construct(string $platformProvider, string $platformAppKey, string $cacheDriver,
+                                int $cacheLifetimeMultiplier, array $cacheParameters = array())
     {
-        /* Sets runtime's path */
-        $this->runtimePath = (string) $runtimePath;
-        /* Sets filename on sway framework base script */
-        $this->binFile = (string) $binFile;
-        /* Determine in which mode kernel gonna to boot */
-        $this->loadMode = (string) $loadMode;
-        /* Application's identifier */
-        $this->appIdentifier = (string) $appIdentifier;
-        /* Application's working directory */
-        $this->workingDirectory = (string) $workingDirectory; 
-        $this->crossDomainsSessionEnabled = (bool) $crossDomainSessionEnabled;
-         
+        if (!strlen($platformProvider)){
+            throw new MissedConfigurationParameterException('swaybundle.platformprovider');
+        }
+
+        if (!strlen($platformAppKey)){
+            throw new MissedConfigurationParameterException('swaybundle.platformappkey');
+        }
+
+
+        /**
+         * Given value has format: "providerhostname:providerport";
+         */
+        $exploded = explode(":", $platformProvider);
+
+        /**
+         * If provider host and port are not passed
+         */
+        if (!sizeof($exploded)){
+            throw ProviderException::emptyPlatformProvider();
+        }
+
+        $providerHostname = $exploded[0];
+        $providerPort = $exploded[1] ?? null;
+
+        /**
+         * If provider hostname is empty
+         */
+        if (!strlen($providerHostname)){
+            throw ProviderException::emptyPlatformProvider();
+        }
+
+        /**
+         * If provider port is not specified
+         */
+        if (empty($providerPort)){
+            throw ProviderException::emptyProviderPort();
+        }
+
+        if (!is_numeric($providerPort)){
+            throw ProviderException::invalidProviderPort();
+        }
+
+        $providerPort = intval($providerPort);
+
+        if ($providerPort < 0 && $providerPort >= 65535){
+            throw ProviderException::invalidProviderPort();
+        }
+
+        $this->platformProviderHostName = $providerHostname;
+        $this->platformProviderPort = $providerPort;
+        $this->cacheDriverParameters = $cacheParameters;
+
+        if (empty($platformAppKey)){
+            throw ProviderException::emptyPlatformAppKey();
+        }
+
+        $this->platformApplicationKey = $platformAppKey;
+
+        $this->cacheDriver = $cacheDriver;
+
+        $this->cacheLifetimeMultiplier = $cacheLifetimeMultiplier;
+
+        $this->connect();
     }
     
     /**
      * Initialize runtime environment, sets application's properties and launch runtime
      * @throws \SwayBundle\Core\Exception
      */
-    public function initialize()
+    public function connect()
     {
-        try {
-            if ($this->initializeRuntimeEnvironment()){
-                $this->initializeApplication();
-            }
-        } 
-        catch (Exception $ex) {
-            throw $ex;
-        }
-        
+        $providerConnector = new Connector([
+            'hostname' => $this->platformProviderHostName,
+            'port' => $this->platformProviderPort,
+            'appkey' => $this->platformApplicationKey,
+            'cachedriver' => $this->cacheDriver,
+            'lifetimemultiplier' => $this->cacheLifetimeMultiplier,
+            'driverparameters' => $this->cacheDriverParameters
+        ]);
+
+        $providerConnector->connect();
+
+        $this->platformConnectionHandler = $providerConnector;
     }
-    
+
     /**
-     * Initialize runtime environment
-     * @return boolean
-     * @throws FileLoaderLoadException
-     * @throws FileNotFoundException
+     * Gets platform connection handler
+     * @return Connector
      */
-    private function initializeRuntimeEnvironment()
+    public function getPlatformHandler() : Connector
     {
-        $runtimeFileAbsolutePath = $this->runtimePath . DIRECTORY_SEPARATOR . $this->binFile;
-        
-        if (is_file($runtimeFileAbsolutePath)){
-            
-            if (!@require_once($runtimeFileAbsolutePath)){
-                throw new FileLoaderLoadException ("Cannot include file '$runtimeFileAbsolutePath'");
-            }
-            else{
-                return true;
-            }
-           
-        }
-        else{
-            throw new FileNotFoundException ("File '$runtimeFileAbsolutePath' not found!");   
-        }
-        
-        return false;
-        
+        return $this->platformConnectionHandler;
     }
-    
-    /**
-     * Sets application's properties and launch runtime environment
-     * @throws WorkingDirectoryException
-     * @throws ApplicationIdentifierEmptyException
-     */
-    private function initializeApplication()
-    {
-        if (!is_dir($this->workingDirectory)){
-            throw new WorkingDirectoryException ($this->workingDirectory);
-        }
-        
-        \SwayEngineBoot::$working_directory = (string) $this->workingDirectory;
-        
-        switch (strtolower($this->loadMode)){
-            case "default":
-                \SwayEngineBoot::$load_mode = \SwayEngineLoadModeCollection::DEFAULT_MODE;
-                break;
-            case 'cron':
-                \SwayEngineBoot::$load_mode = \SwayEngineLoadModeCollection::CRON_MODE;
-                break;
-            case 'lite':
-                \SwayEngineBoot::$load_mode = \SwayEngineLoadModeCollection::LITE_MODE;
-                break;
-            case 'class':
-                \SwayEngineBoot::$load_mode = \SwayEngineLoadModeCollection::CLASS_MODE;
-                break;
-            case 'console':
-                \SwayEngineBoot::$load_mode = \SwayEngineLoadModeCollection::CONSOLE_MODE;
-                break;
-            case 'utils':
-                \SwayEngineBoot::$load_mode = \SwayEngineLoadModeCollection::UTILS_MODE;
-                break;
-            default:
-                \SwayEngineBoot::$load_mode = \SwayEngineLoadModeCollection::DEFAULT_MODE;
-                break;
-        }
-        
-        if (empty($this->appIdentifier) || !strlen($this->appIdentifier)){
-            throw new ApplicationIdentifierEmptyException();
-        }
-        else{
-            \SwayEngineBoot::$ApplicationIdentifier = $this->appIdentifier;
-        }
-        
-        \SwayEngineBoot::Boot();
-        
-        if ($this->crossDomainsSessionEnabled){
-            \SWMultiDomainsSession::Start();
-        }
-        
-    }
-    
+
     
     
     
