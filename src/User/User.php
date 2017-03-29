@@ -626,6 +626,11 @@ class User
 
         return (bool) $remindResult;
     }
+
+    public function getXAUser() : XAUser
+    {
+        return $this->userObject;
+    }
     
     
     
